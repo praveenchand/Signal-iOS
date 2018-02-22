@@ -4112,6 +4112,7 @@ typedef enum : NSUInteger {
     _shouldObserveDBModifications = shouldObserveDBModifications;
 
     if (self.shouldObserveDBModifications) {
+        DDLogVerbose(@"%@ resume observation of database modifications.", self.logTag);
         // We need to call resetMappings when we _resume_ observing DB modifications,
         // since we've been ignore DB modifications so the mappings can be wrong.
         //
@@ -4158,15 +4159,15 @@ typedef enum : NSUInteger {
         if (hasAddedNewItems) {
             NSIndexPath *_Nullable indexPathToShow = [self firstIndexPathAtPreviousLastUnreadTimestamp];
             if (indexPathToShow) {
-                dispatch_async(dispatch_get_main_queue(), ^{
-                    [self.collectionView scrollToItemAtIndexPath:indexPathToShow
-                                                atScrollPosition:UICollectionViewScrollPositionCenteredVertically
-                                                        animated:YES];
-                });
+                [self.collectionView scrollToItemAtIndexPath:indexPathToShow
+                                            atScrollPosition:UICollectionViewScrollPositionCenteredVertically
+                                                    animated:YES];
             }
         }
         self.previousLastUnreadTimestamp = nil;
+        DDLogVerbose(@"%@ resumed observation of database modifications.", self.logTag);
     } else {
+        DDLogVerbose(@"%@ pausing observation of database modifications.", self.logTag);
         // When stopping observation, try to record the timestamp of the last item.
         //
         // We'll use this later to update the view to reflect any changes made while
@@ -4188,6 +4189,7 @@ typedef enum : NSUInteger {
         } else {
             self.previousLastUnreadTimestamp = nil;
         }
+        DDLogVerbose(@"%@ paused observation of database modifications.", self.logTag);
     }
 }
 
@@ -4203,6 +4205,10 @@ typedef enum : NSUInteger {
     }
     uint64_t previousLastUnreadTimestamp = self.previousLastUnreadTimestamp.unsignedLongLongValue;
     // Binary search for the first view item whose timestamp >= the "previous last unread" timestamp.
+    // We want to move "left" rightward, discarding interactions before this cutoff.
+    // We want to move "right" leftward, discarding all-but-the-first interaction after this cutoff.
+    // In the end, if we converge on an item _after_ this cutoff, it's the one we want.
+    // If we converge on an item _before_ this cutoff, there was no interaction that fit our criteria.
     NSUInteger left = 0, right = self.viewItems.count - 1;
     while (left != right) {
         OWSAssert(left < right);
